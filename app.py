@@ -64,8 +64,7 @@ def get_top_losers(limit=10):
             "exchange": meta.get("exchange", ""),
             "currentPrice": round(price, 2),
             "changePct": round(change_pct, 2),
-            "yahooLink": f"https://finance.yahoo.com/quote/{ticker}",
-            "sparkline": f"https://chart.yahoo.com/z?s={ticker}&t=5d&q=l&l=on&z=s&p=m50,m200"
+            "yahooLink": f"https://finance.yahoo.com/quote/{ticker}"
         })
 
     return sorted(losers, key=lambda x: x["changePct"])[:limit]
@@ -209,7 +208,6 @@ def homepage():
                         <th onclick="sortTable(2)">Exchange</th>
                         <th onclick="sortTable(3)">Price ($)</th>
                         <th onclick="sortTable(4)">Change %</th>
-                        <th>Chart</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -220,7 +218,6 @@ def homepage():
                         <td>{{ stock.exchange }}</td>
                         <td>{{ stock.currentPrice }}</td>
                         <td class="negative">{{ stock.changePct }}%</td>
-                        <td><a href="{{ stock.yahooLink }}" target="_blank"><img src="{{ stock.sparkline }}" width="120" height="40" alt="sparkline" /></a></td>
                     </tr>
                     {% endfor %}
                 </tbody>
