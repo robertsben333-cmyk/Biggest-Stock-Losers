@@ -1,11 +1,11 @@
 from flask import Flask, jsonify
 import requests
 
-# Optional: use a custom app name for clarity
 app = Flask("Identify_biggest_stocklosers")
-
-# Your hardcoded Polygon.io API key
 API_KEY = "E3NCUMZ5jFaGCvuNr6NfyxupHpAgKiL7"
+
+# Global mapping of ticker to metadata
+ticker_metadata = {}
 
 def get_common_stocks(exchange):
     """Fetch all active common stocks (type=CS) from a specific exchange (XNYS or XNAS)."""
@@ -23,9 +23,20 @@ def get_common_stocks(exchange):
         resp = requests.get(url, params=params)
         data = resp.json()
         for result in data.get("results", []):
-            tickers.add(result["ticker"])
+            ticker = result.get("ticker")
+            if not ticker:
+                continue
+            ticker = ticker.upper()
+            tickers.add(ticker)
+
+            # Save name and exchange for this ticker
+            ticker_metadata[ticker] = {
+                "name": result.get("name", ""),
+                "exchange": result.get("primary_exchange", exchange)
+            }
+
         url = data.get("next_url")
-        params = {"apiKey": API_KEY}  # For subsequent pages, only use apiKey
+        params = {"apiKey": API_KEY}  # Only pass apiKey for next_url
     return tickers
 
 def get_market_snapshot():
@@ -53,7 +64,7 @@ def get_top_losers():
 
         # Step 3: Filter and compute percentage loss
         for snap in snapshot_data:
-            ticker = snap.get("ticker")
+            ticker = snap.get("ticker", "").upper()
             if ticker not in common_tickers:
                 continue
 
@@ -65,8 +76,12 @@ def get_top_losers():
             if change_pct is None or change_pct >= 0:
                 continue
 
+            # Lookup metadata
+            meta = ticker_metadata.get(ticker, {})
             losers.append({
                 "ticker": ticker,
+                "name": meta.get("name", ""),
+                "exchange": meta.get("exchange", ""),
                 "currentPrice": round(price, 2),
                 "changePct": round(change_pct, 2)
             })
@@ -79,5 +94,4 @@ def get_top_losers():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    # Required port for Render
     app.run(host="0.0.0.0", port=10000)
