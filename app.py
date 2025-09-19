@@ -1,11 +1,12 @@
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, jsonify, request
 import requests
 from datetime import datetime
-import pytz
+from zoneinfo import ZoneInfo  # native timezone support (Python 3.9+)
 
 app = Flask("Identify_biggest_stocklosers")
 API_KEY = "E3NCUMZ5jFaGCvuNr6NfyxupHpAgKiL7"
 ticker_metadata = {}
+
 
 def get_common_stocks(exchange):
     url = "https://api.polygon.io/v3/reference/tickers"
@@ -29,11 +30,12 @@ def get_common_stocks(exchange):
             tickers.add(ticker)
             ticker_metadata[ticker] = {
                 "name": result.get("name", ""),
-                "exchange": result.get("primary_exchange", exchange)
+                "exchange": result.get("primary_exchange", exchange),
             }
         url = data.get("next_url")
         params = {"apiKey": API_KEY}
     return tickers
+
 
 def get_market_snapshot():
     url = "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers"
@@ -41,10 +43,9 @@ def get_market_snapshot():
     resp = requests.get(url, params=params)
     return resp.json().get("tickers", [])
 
-def determine_time_logic():
-    cet = pytz.timezone("CET")
-    now_cet = datetime.now(cet)
 
+def determine_time_logic():
+    now_cet = datetime.now(ZoneInfo("Europe/Paris"))  # CET/CEST
     hour = now_cet.hour
     minute = now_cet.minute
     total_minutes = hour * 60 + minute
@@ -52,31 +53,53 @@ def determine_time_logic():
     if total_minutes < (14 * 60 + 30):
         return "overnight"  # Before 14:30 CET
     elif total_minutes < (22 * 60):
-        return "intraday"   # Between 14:30 and 22:00 CET
+        return "intraday"  # Between 14:30 and 22:00 CET
     else:
         return "afterhours"  # After 22:00 CET
 
+
 def calculate_change_pct(snap, logic):
+    # current price (last trade or day close)
     price_now = snap.get("day", {}).get("c") or snap.get("lastTrade", {}).get("p")
     if not price_now:
         return None
 
-    prev_day = snap.get("prevDay", {})
+    prev = snap.get("prevDay", {})
     today = snap.get("day", {})
 
+    prev_close = prev.get("c")
+    prev_open = prev.get("o")
+    today_open = today.get("o")
+    today_close = today.get("c")
+
+    base_price = None
+
     if logic == "overnight":
-        base_price = prev_day.get("o")  # yesterday's open
+        # compare current vs yesterday close
+        if prev_close:
+            base_price = prev_close
+        elif prev_open:
+            base_price = prev_open
     elif logic == "intraday":
-        base_price = prev_day.get("c")  # yesterday's close
+        # compare current vs today open (or yesterday close fallback)
+        if today_open:
+            base_price = today_open
+        elif prev_close:
+            base_price = prev_close
     elif logic == "afterhours":
-        base_price = today.get("o")     # today's open
-    else:
-        base_price = None
+        # after market hours: compare to today close if available
+        if today_close:
+            base_price = today_close
+        elif today_open:
+            base_price = today_open
+        elif prev_close:
+            base_price = prev_close
 
     if not base_price or base_price == 0:
         return None
 
     return (price_now - base_price) / base_price * 100
+
 
 def get_top_losers(limit=10):
     logic = determine_time_logic()
@@ -93,7 +116,7 @@ def get_top_losers(limit=10):
             continue
 
         price = snap.get("day", {}).get("c") or snap.get("lastTrade", {}).get("p")
-        if not price or price < 15:
+        if not price or price < 15:  # filter penny stocks
             continue
 
         change_pct = calculate_change_pct(snap, logic)
@@ -101,17 +124,20 @@ def get_top_losers(limit=10):
             continue
 
         meta = ticker_metadata.get(ticker, {})
-        losers.append({
-            "ticker": ticker,
-            "name": meta.get("name", ""),
-            "exchange": meta.get("exchange", ""),
-            "currentPrice": round(price, 2),
-            "changePct": round(change_pct, 2),
-            "yahooLink": f"https://finance.yahoo.com/quote/{ticker}"
-        })
+        losers.append(
+            {
+                "ticker": ticker,
+                "name": meta.get("name", ""),
+                "exchange": meta.get("exchange", ""),
+                "currentPrice": round(price, 2),
+                "changePct": round(change_pct, 2),
+                "yahooLink": f"https://finance.yahoo.com/quote/{ticker}",
+            }
+        )
 
     losers = sorted(losers, key=lambda x: x["changePct"])[:limit]
     return losers
+
 
 @app.route("/top-losers", methods=["GET"])
 def api_top_losers():
@@ -120,6 +146,7 @@ def api_top_losers():
         return jsonify(get_top_losers(limit))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
