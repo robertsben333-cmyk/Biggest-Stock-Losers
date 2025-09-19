@@ -34,6 +34,7 @@ def get_common_stocks(exchange):
             }
         url = data.get("next_url")
         params = {"apiKey": API_KEY}
+    print(f"[DEBUG] Loaded {len(tickers)} tickers for {exchange}")
     return tickers
 
 
@@ -41,25 +42,13 @@ def get_market_snapshot():
     url = "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers"
     params = {"apiKey": API_KEY, "include_otc": "false"}
     resp = requests.get(url, params=params)
-    return resp.json().get("tickers", [])
+    data = resp.json()
+    tickers = data.get("tickers", [])
+    print(f"[DEBUG] Snapshot contains {len(tickers)} tickers")
+    return tickers
 
 
-def determine_time_logic():
-    now_cet = datetime.now(ZoneInfo("Europe/Paris"))  # CET/CEST
-    hour = now_cet.hour
-    minute = now_cet.minute
-    total_minutes = hour * 60 + minute
-
-    if total_minutes < (14 * 60 + 30):
-        return "overnight"  # Before 14:30 CET
-    elif total_minutes < (22 * 60):
-        return "intraday"  # Between 14:30 and 22:00 CET
-    else:
-        return "afterhours"  # After 22:00 CET
-
-
-def calculate_change_pct(snap, logic):
-    # current price (last trade or day close)
+def calculate_change_pct(snap):
     price_now = snap.get("day", {}).get("c") or snap.get("lastTrade", {}).get("p")
     if not price_now:
         return None
@@ -68,59 +57,55 @@ def calculate_change_pct(snap, logic):
     today = snap.get("day", {})
 
     prev_close = prev.get("c")
-    prev_open = prev.get("o")
     today_open = today.get("o")
-    today_close = today.get("c")
 
-    base_price = None
+    # CET tijd ophalen
+    now_cet = datetime.now(ZoneInfo("Europe/Paris"))
+    total_minutes = now_cet.hour * 60 + now_cet.minute
 
-    if logic == "overnight":
-        # compare current vs yesterday close
-        if prev_close:
-            base_price = prev_close
-        elif prev_open:
-            base_price = prev_open
-    elif logic == "intraday":
-        # compare current vs today open (or yesterday close fallback)
-        if today_open:
-            base_price = today_open
-        elif prev_close:
-            base_price = prev_close
-    elif logic == "afterhours":
-        # after market hours: compare to today close if available
-        if today_close:
-            base_price = today_close
-        elif today_open:
-            base_price = today_open
-        elif prev_close:
-            base_price = prev_close
+    if total_minutes < (21 * 60):  # tot 21:00 CET
+        base_price = prev_close
+        logic = "using prevDay close"
+    else:  # na 21:00 CET
+        base_price = today_open or prev_close
+        logic = "using today open"
 
     if not base_price or base_price == 0:
         return None
 
-    return (price_now - base_price) / base_price * 100
+    change = (price_now - base_price) / base_price * 100
+    print(f"[DEBUG] {snap.get('ticker')} {logic}: price_now={price_now}, base={base_price}, change={change:.2f}%")
+    return change
 
 
 def get_top_losers(limit=10):
-    logic = determine_time_logic()
-
     nyse = get_common_stocks("XNYS")
     nasdaq = get_common_stocks("XNAS")
     common_tickers = nyse.union(nasdaq)
     snapshot_data = get_market_snapshot()
     losers = []
 
+    # Debug counters
+    checked = 0
+    skipped_price = 0
+    skipped_change = 0
+    skipped_not_common = 0
+
     for snap in snapshot_data:
         ticker = snap.get("ticker", "").upper()
+        checked += 1
         if ticker not in common_tickers:
+            skipped_not_common += 1
             continue
 
         price = snap.get("day", {}).get("c") or snap.get("lastTrade", {}).get("p")
-        if not price or price < 15:  # filter penny stocks
+        if not price or price < 15:
+            skipped_price += 1
             continue
 
-        change_pct = calculate_change_pct(snap, logic)
+        change_pct = calculate_change_pct(snap)
         if change_pct is None or change_pct >= 0:
+            skipped_change += 1
             continue
 
         meta = ticker_metadata.get(ticker, {})
@@ -136,6 +121,13 @@ def get_top_losers(limit=10):
         )
 
     losers = sorted(losers, key=lambda x: x["changePct"])[:limit]
+
+    print(f"[DEBUG] Total tickers checked: {checked}")
+    print(f"[DEBUG] Skipped (not common stock): {skipped_not_common}")
+    print(f"[DEBUG] Skipped (price < 15 or missing): {skipped_price}")
+    print(f"[DEBUG] Skipped (no negative change): {skipped_change}")
+    print(f"[DEBUG] Final losers count: {len(losers)}")
+
     return losers
 
 
