@@ -1,3 +1,2 @@
-Flask
-requests
-pytz
+Flask>=2.0
+requests>=2.25
