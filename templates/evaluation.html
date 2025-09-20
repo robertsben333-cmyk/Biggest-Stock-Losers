@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Evaluation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .change-negative { color: #ef4444; }
+        .change-positive { color: #22c55e; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-900">Stock Evaluation</h1>
+            <p class="text-gray-600 mt-2">Track and evaluate the performance of selected stocks over time.</p>
+            <a href="{{ url_for('home') }}" class="mt-4 inline-block px-5 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700">Back to Home</a>
+        </header>
+
+        <!-- Section to Add New Stocks -->
+        <div class="bg-white rounded-lg shadow-lg overflow-hidden mb-12">
+            <h2 class="text-2xl font-bold text-gray-800 p-6 border-b">Add Stocks to Track</h2>
+            <p class="text-gray-600 px-6 pb-4">Select from today's top 10 losers to add to your evaluation list.</p>
+            <form action="{{ url_for('evaluation') }}" method="POST">
+                <div class="p-6">
+                    {% if stocks_to_add %}
+                        <div class="space-y-4">
+                        {% for stock in stocks_to_add %}
+                            <label class="flex items-center p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                                <input type="checkbox" name="track_ticker" value="{{ stock.ticker }}" class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                <span class="ml-4 font-bold text-blue-600 w-16">{{ stock.ticker }}</span>
+                                <span class="ml-4 text-gray-700 flex-grow">{{ stock.name }}</span>
+                                <span class="ml-4 font-medium">${{ "%.2f"|format(stock.currentPrice) }}</span>
+                                <span class="ml-4 w-20 text-right font-bold change-negative">{{ "%.2f"|format(stock.changePct) }}%</span>
+                            </label>
+                        {% endfor %}
+                        </div>
+                        <button type="submit" class="mt-6 w-full px-6 py-3 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700">Track Selected Stocks</button>
+                    {% else %}
+                        <p class="text-center text-gray-500">No new stock losers to add, or all are already being tracked.</p>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+
+        <!-- Section for Tracked Stocks -->
+        <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+            <h2 class="text-2xl font-bold text-gray-800 p-6 border-b">Tracked Stocks Performance</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-gray-50 border-b-2 border-gray-200">
+                        <tr>
+                            <th class="p-4 text-left text-sm font-semibold text-gray-600 uppercase">Ticker</th>
+                            <th class="p-4 text-left text-sm font-semibold text-gray-600 uppercase">Start Date</th>
+                            <th class="p-4 text-right text-sm font-semibold text-gray-600 uppercase">Start Price</th>
+                            <th class="p-4 text-right text-sm font-semibold text-gray-600 uppercase">Current Price</th>
+                            <th class="p-4 text-right text-sm font-semibold text-gray-600 uppercase">Current % Change</th>
+                            <th class="p-4 text-right text-sm font-semibold text-gray-600 uppercase">Avg. Daily % Change</th>
+                            <th class="p-4 text-right text-sm font-semibold text-gray-600 uppercase">Max Price Swing</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200">
+                        {% for stock in tracked_stocks_data %}
+                        <tr>
+                            <td class="p-4 whitespace-nowrap"><a href="https://finance.yahoo.com/quote/{{ stock.ticker }}" target="_blank" class="font-bold text-blue-600 hover:underline">{{ stock.ticker }}</a></td>
+                            <td class="p-4 text-gray-500">{{ stock.start_date }}</td>
+                            <td class="p-4 text-right font-medium">${{ "%.2f"|format(stock.start_price) }}</td>
+                            <td class="p-4 text-right font-medium">${{ "%.2f"|format(stock.current_price) }}</td>
+                            <td class="p-4 text-right font-bold {% if stock.current_change_pct < 0 %}change-negative{% else %}change-positive{% endif %}">{{ "%.2f"|format(stock.current_change_pct) }}%</td>
+                            <td class="p-4 text-right font-bold {% if stock.avg_daily_change_pct < 0 %}change-negative{% else %}change-positive{% endif %}">{{ "%.2f"|format(stock.avg_daily_change_pct) }}%</td>
+                            <td class="p-4 text-right font-medium">${{ "%.2f"|format(stock.max_swing) }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="7" class="p-8 text-center text-gray-500">You are not tracking any stocks yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
