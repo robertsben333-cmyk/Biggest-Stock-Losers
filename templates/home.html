@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Top Stock Losers</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>body { font-family: 'Inter', sans-serif; } .change-negative { color: #ef4444; }</style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-900">Top Stock Losers</h1>
+            <p class="text-gray-600 mt-2">The biggest stock decliners on NYSE & NASDAQ (Price >= $15)</p>
+            <p class="text-sm text-gray-500 mt-1">Last updated: {{ last_updated }}</p>
+        </header>
+
+        <form action="/" method="GET" class="flex justify-center items-center flex-wrap gap-4 mb-8">
+            <div class="flex items-center space-x-2">
+                <label for="limit" class="text-sm font-medium text-gray-700">Show:</label>
+                <input type="number" name="limit" id="limit" value="{{ limit }}" min="1" max="100" class="w-20 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <button type="submit" class="px-5 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400">Refresh</button>
+            <a href="/api/top-losers?limit={{ limit }}" target="_blank" class="px-5 py-2 bg-gray-700 text-white font-semibold rounded-lg shadow-md hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-500">JSON</a>
+            <a href="{{ url_for('evaluation') }}" class="px-5 py-2 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500">Evaluation Page</a>
+        </form>
+        
+        <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-gray-50 border-b-2 border-gray-200">
+                        <tr>
+                            <th class="p-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Ticker</th>
+                            <th class="p-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Company Name</th>
+                            <th class="p-4 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Exchange</th>
+                            <th class="p-4 text-right text-sm font-semibold text-gray-600 uppercase tracking-wider">Price</th>
+                            <th class="p-4 text-right text-sm font-semibold text-gray-600 uppercase tracking-wider">% Change</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200">
+                        {% for stock in stocks %}
+                        <tr>
+                            <td class="p-4 whitespace-nowrap"><a href="{{ stock.yahooLink }}" target="_blank" class="font-bold text-blue-600 hover:underline">{{ stock.ticker }}</a></td>
+                            <td class="p-4 text-gray-700">{{ stock.name }}</td>
+                            <td class="p-4 text-gray-500">{{ stock.exchange }}</td>
+                            <td class="p-4 text-right font-medium">${{ "%.2f"|format(stock.currentPrice) }}</td>
+                            <td class="p-4 text-right font-bold change-negative">{{ "%.2f"|format(stock.changePct) }}%</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" class="p-8 text-center text-gray-500">No significant stock losers found.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <footer class="text-center mt-8 text-sm text-gray-500">
+            <p>Data provided by <a href="https://polygon.io/" target="_blank" class="text-blue-600 hover:underline">Polygon.io</a>. 15-minute delay.</p>
+        </footer>
+    </div>
+</body>
+</html>
