@@ -1,8 +1,10 @@
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, render_template_string, request
 import requests
 import json
 import threading
 import time
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 # --- Flask App Initialization ---
 app = Flask("Identify_biggest_stocklosers")
@@ -61,6 +63,13 @@ def load_common_stocks():
     print(f"--- ✅ Complete: Loaded {len(COMMON_STOCK_TICKERS)} unique common stock tickers. ---\n")
 
 
+def is_cet_between_17_and_20():
+    """Return True when the current time in CET is between 17:00 and 20:00."""
+    cet = ZoneInfo("Europe/Paris")
+    now_cet = datetime.now(timezone.utc).astimezone(cet)
+    return 17 <= now_cet.hour < 20
+
+
 def update_top_losers_cache(min_price=15.0):
     """
     This function runs in a background thread to fetch the latest loser data
@@ -84,6 +93,8 @@ def update_top_losers_cache(min_price=15.0):
         print(f"  [FATAL ERROR] A network error occurred while fetching snapshot: {e}")
         return
 
+    use_prev_close_reference = is_cet_between_17_and_20()
+
     calculated_losers = []
     
     with data_lock:
@@ -96,17 +107,26 @@ def update_top_losers_cache(min_price=15.0):
         if ticker not in local_tickers:
             continue
 
-        previous_close = snap.get("prevDay", {}).get("c")
-
-        if not previous_close or previous_close < min_price:
-            continue
-            
         current_price = snap.get("lastTrade", {}).get("p") or snap.get("day", {}).get("c")
 
         if not current_price:
             continue
-            
-        change_pct = ((current_price - previous_close) / previous_close) * 100
+
+        if current_price < min_price:
+            continue
+
+        previous_close = snap.get("prevDay", {}).get("c")
+        day_open = snap.get("day", {}).get("o")
+
+        if use_prev_close_reference:
+            reference_price = previous_close
+        else:
+            reference_price = day_open if day_open else previous_close
+
+        if not reference_price or reference_price < min_price:
+            continue
+
+        change_pct = ((current_price - reference_price) / reference_price) * 100
 
         if change_pct >= 0:
             continue
@@ -210,6 +230,56 @@ HTML_TEMPLATE = """
 </html>
 """
 
+JSON_PAGE_TEMPLATE = """
+<!DOCTYPE html>
+<html lang=\"en\">
+<head>
+    <meta charset=\"UTF-8\">
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+    <title>Top Stock Losers JSON</title>
+    <script src=\"https://cdn.tailwindcss.com\"></script>
+</head>
+<body class=\"bg-gray-100 text-gray-800\">
+    <div class=\"max-w-4xl mx-auto px-4 py-8\">
+        <header class=\"mb-6\">
+            <h1 class=\"text-3xl font-semibold text-gray-900\">Top Stock Losers – JSON</h1>
+            <p class=\"text-gray-600\">Limit: {{ limit }}</p>
+        </header>
+        <div class=\"flex items-center gap-3 mb-4\">
+            <button id=\"copy-json\" class=\"px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400\">
+                Copy JSON to clipboard
+            </button>
+            <span id=\"copy-status\" class=\"text-sm text-gray-500\" role=\"status\" aria-live=\"polite\"></span>
+        </div>
+        <pre id=\"json-output\" class=\"bg-white p-4 rounded-lg shadow overflow-x-auto text-sm text-gray-800\">{{ json_data }}</pre>
+    </div>
+
+    <script>
+        (function () {
+            const copyButton = document.getElementById('copy-json');
+            const jsonOutput = document.getElementById('json-output');
+            const status = document.getElementById('copy-status');
+
+            function updateStatus(message, isError) {
+                status.textContent = message;
+                status.classList.toggle('text-red-500', Boolean(isError));
+                status.classList.toggle('text-green-600', !isError);
+            }
+
+            copyButton.addEventListener('click', async () => {
+                try {
+                    await navigator.clipboard.writeText(jsonOutput.textContent);
+                    updateStatus('Copied!', false);
+                } catch (error) {
+                    updateStatus('Copy failed. Try manually selecting the text.', true);
+                }
+            });
+        })();
+    </script>
+</body>
+</html>
+"""
+
 # --- Flask Routes ---
 
 @app.route("/")
@@ -241,7 +311,14 @@ def api_top_losers():
         # We return a copy to avoid any potential race conditions if the cache is updated.
         data = TOP_LOSERS_CACHE[:limit]
     
-    return jsonify(data)
+    json_string = json.dumps(data, indent=2)
+    best_match = request.accept_mimetypes.best_match(["application/json", "text/html"])
+    prefers_html = request.args.get("view", "").lower() == "html" or best_match == "text/html"
+
+    if prefers_html:
+        return render_template_string(JSON_PAGE_TEMPLATE, json_data=json_string, limit=limit)
+
+    return app.response_class(json_string, mimetype="application/json")
 
 # --- Main Execution ---
 
